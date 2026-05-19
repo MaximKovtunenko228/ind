@@ -1,24 +1,89 @@
-using System;
+ using System;
 using System.Data;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace KovtunenkoTask
 {
     public partial class Form1 : Form
     {
+        private DataGridView dataGridViewMaster;
+        private DataGridView dataGridViewDetail;
         private DataTable masterTable;
         private DataTable detailTable;
 
         public Form1()
         {
             InitializeComponent();
+            InitializeCustomComponents();
             LoadData();
             SetupMasterDetail();
         }
 
+        private void InitializeCustomComponents()
+        {
+            this.Text = "Учет затрат предприятия";
+            this.Size = new Size(1000, 700);
+            this.StartPosition = FormStartPosition.CenterScreen;
+
+            // Верхняя таблица (Master - плановые затраты)
+            dataGridViewMaster = new DataGridView();
+            dataGridViewMaster.Dock = DockStyle.Top;
+            dataGridViewMaster.Height = 250;
+            dataGridViewMaster.AllowUserToAddRows = false;
+            dataGridViewMaster.ReadOnly = true;
+            dataGridViewMaster.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dataGridViewMaster.MultiSelect = false;
+            this.Controls.Add(dataGridViewMaster);
+
+            // Панель с кнопками для Master
+            Panel panelMasterButtons = new Panel();
+            panelMasterButtons.Dock = DockStyle.Top;
+            panelMasterButtons.Height = 50;
+            panelMasterButtons.BackColor = Color.LightGray;
+
+            Button btnAddMaster = new Button { Text = "Добавить план", Location = new Point(10, 10), Width = 120 };
+            Button btnEditMaster = new Button { Text = "Изменить план", Location = new Point(140, 10), Width = 120 };
+            Button btnDeleteMaster = new Button { Text = "Удалить план", Location = new Point(270, 10), Width = 120 };
+
+            btnAddMaster.Click += btnAddMaster_Click;
+            btnEditMaster.Click += btnEditMaster_Click;
+            btnDeleteMaster.Click += btnDeleteMaster_Click;
+
+            panelMasterButtons.Controls.AddRange(new Control[] { btnAddMaster, btnEditMaster, btnDeleteMaster });
+            this.Controls.Add(panelMasterButtons);
+
+            // Нижняя таблица (Detail - фактические затраты)
+            dataGridViewDetail = new DataGridView();
+            dataGridViewDetail.Dock = DockStyle.Fill;
+            dataGridViewDetail.AllowUserToAddRows = false;
+            dataGridViewDetail.ReadOnly = true;
+            dataGridViewDetail.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dataGridViewDetail.MultiSelect = false;
+            this.Controls.Add(dataGridViewDetail);
+
+            // Панель с кнопками для Detail и Отчета
+            Panel panelDetailButtons = new Panel();
+            panelDetailButtons.Dock = DockStyle.Bottom;
+            panelDetailButtons.Height = 50;
+            panelDetailButtons.BackColor = Color.LightGray;
+
+            Button btnAddDetail = new Button { Text = "Добавить факт", Location = new Point(10, 10), Width = 120 };
+            Button btnEditDetail = new Button { Text = "Изменить факт", Location = new Point(140, 10), Width = 120 };
+            Button btnDeleteDetail = new Button { Text = "Удалить факт", Location = new Point(270, 10), Width = 120 };
+            Button btnOpenReport = new Button { Text = "Отчет", Location = new Point(800, 10), Width = 120, BackColor = Color.LightGreen };
+
+            btnAddDetail.Click += btnAddDetail_Click;
+            btnEditDetail.Click += btnEditDetail_Click;
+            btnDeleteDetail.Click += btnDeleteDetail_Click;
+            btnOpenReport.Click += btnOpenReport_Click;
+
+            panelDetailButtons.Controls.AddRange(new Control[] { btnAddDetail, btnEditDetail, btnDeleteDetail, btnOpenReport });
+            this.Controls.Add(panelDetailButtons);
+        }
+
         private void LoadData()
         {
-            // Мастер: Плановые затраты с именами вместо ID
             string sqlMaster = @"
                 SELECT p.plan_id, d.department_name AS Отдел, i.item_name AS Статья, 
                        p.plan_year AS Год, p.planned_amount AS План
@@ -29,14 +94,12 @@ namespace KovtunenkoTask
             
             masterTable = DatabaseHelper.ExecuteQuery(sqlMaster);
             dataGridViewMaster.DataSource = masterTable;
-            
-            // Скрываем ID
-            dataGridViewMaster.Columns["plan_id"].Visible = false;
+            if (dataGridViewMaster.Columns.Contains("plan_id"))
+                dataGridViewMaster.Columns["plan_id"].Visible = false;
         }
 
         private void SetupMasterDetail()
         {
-            // При выборе строки в master обновляем detail
             dataGridViewMaster.SelectionChanged += DataGridViewMaster_SelectionChanged;
         }
 
@@ -44,11 +107,8 @@ namespace KovtunenkoTask
         {
             if (dataGridViewMaster.SelectedRows.Count > 0)
             {
-                // Получаем department_id и item_id из выделенной строки
-                // Для простоты извлекаем ID через скрытые столбцы или через запрос к БД по названиям
                 int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
                 
-                // Чтобы получить department_id и item_id, лучше сделать отдельный запрос по plan_id
                 string sqlIds = $"SELECT department_id, item_id FROM planned_expenses WHERE plan_id = {planId}";
                 var dtIds = DatabaseHelper.ExecuteQuery(sqlIds);
                 
@@ -57,7 +117,6 @@ namespace KovtunenkoTask
                     int deptId = Convert.ToInt32(dtIds.Rows[0]["department_id"]);
                     int itemId = Convert.ToInt32(dtIds.Rows[0]["item_id"]);
 
-                    // Загружаем фактические затраты по этим отделу и статье
                     string sqlDetail = $@"
                         SELECT a.actual_id, a.expense_date AS Дата, a.amount AS Сумма, a.note AS Примечание
                         FROM actual_expenses a
@@ -66,16 +125,16 @@ namespace KovtunenkoTask
 
                     detailTable = DatabaseHelper.ExecuteQuery(sqlDetail);
                     dataGridViewDetail.DataSource = detailTable;
-                    dataGridViewDetail.Columns["actual_id"].Visible = false;
+                    if (dataGridViewDetail.Columns.Contains("actual_id"))
+                        dataGridViewDetail.Columns["actual_id"].Visible = false;
                 }
             }
         }
 
-        // --- CRUD Кнопки ---
+        // --- CRUD для Master ---
 
         private void btnAddMaster_Click(object sender, EventArgs e)
         {
-            // Открываем форму редактирования в режиме добавления (id = 0)
             using (var form = new AddEditForm(0)) 
             {
                 if (form.ShowDialog() == DialogResult.OK)
@@ -87,32 +146,35 @@ namespace KovtunenkoTask
                         new Npgsql.NpgsqlParameter("@year", form.Year),
                         new Npgsql.NpgsqlParameter("@amount", form.Amount)
                     );
-                    LoadData(); // Обновить таблицы
+                    LoadData();
                 }
             }
         }
 
         private void btnEditMaster_Click(object sender, EventArgs e)
         {
-            if (dataGridViewMaster.SelectedRows.Count == 0) return;
+            if (dataGridViewMaster.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Выберите строку для редактирования.");
+                return;
+            }
             int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
             
-            // Получаем текущие данные для редактирования
             string sql = $"SELECT * FROM planned_expenses WHERE plan_id = {planId}";
             var dt = DatabaseHelper.ExecuteQuery(sql);
             if (dt.Rows.Count == 0) return;
 
             using (var form = new AddEditForm(planId))
             {
-                // Предзаполняем форму
-                form.SetEditData(Convert.ToInt32(dt.Rows[0]["department_id"]), 
-                                 Convert.ToInt32(dt.Rows[0]["item_id"]),
-                                 Convert.ToInt32(dt.Rows[0]["plan_year"]),
-                                 Convert.ToDecimal(dt.Rows[0]["planned_amount"]));
+                form.SetEditData(
+                    Convert.ToInt32(dt.Rows[0]["department_id"]),
+                    Convert.ToInt32(dt.Rows[0]["item_id"]),
+                    Convert.ToInt32(dt.Rows[0]["plan_year"]),
+                    Convert.ToDecimal(dt.Rows[0]["planned_amount"])
+                );
                 
                 if (form.ShowDialog() == DialogResult.OK)
                 {
-                    // Обновляем запись, а не вводим заново
                     DatabaseHelper.ExecuteNonQuery(
                         "UPDATE planned_expenses SET department_id=@deptId, item_id=@itemId, plan_year=@year, planned_amount=@amount WHERE plan_id=@planId",
                         new Npgsql.NpgsqlParameter("@deptId", form.SelectedDepartmentId),
@@ -128,18 +190,112 @@ namespace KovtunenkoTask
 
         private void btnDeleteMaster_Click(object sender, EventArgs e)
         {
-            if (dataGridViewMaster.SelectedRows.Count == 0) return;
-            if (MessageBox.Show("Удалить выбранную плановую запись?", "Подтверждение", MessageBoxButtons.YesNo) == DialogResult.Yes)
+            if (dataGridViewMaster.SelectedRows.Count == 0)
             {
-                int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
-                DatabaseHelper.ExecuteNonQuery("DELETE FROM planned_expenses WHERE plan_id = @id", new Npgsql.NpgsqlParameter("@id", planId));
-                LoadData();
+                MessageBox.Show("Выберите запись для удаления.");
+                return;
+            }
+            
+            if (MessageBox.Show("Вы уверены, что хотите удалить эту плановую запись?", 
+                                "Подтверждение удаления", 
+                                MessageBoxButtons.YesNo, 
+                                MessageBoxIcon.Question) == DialogResult.No)
+            {
+                return;
+            }
+            
+            int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
+            DatabaseHelper.ExecuteNonQuery("DELETE FROM planned_expenses WHERE plan_id = @id", 
+                                            new Npgsql.NpgsqlParameter("@id", planId));
+            LoadData();
+        }
+
+        // --- CRUD для Detail ---
+
+        private void btnAddDetail_Click(object sender, EventArgs e)
+        {
+            if (dataGridViewMaster.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Сначала выберите плановую запись (строку в верхней таблице).");
+                return;
+            }
+
+            int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
+            string sqlIds = $"SELECT department_id, item_id FROM planned_expenses WHERE plan_id = {planId}";
+            var dtIds = DatabaseHelper.ExecuteQuery(sqlIds);
+            if (dtIds.Rows.Count == 0) return;
+
+            int deptId = Convert.ToInt32(dtIds.Rows[0]["department_id"]);
+            int itemId = Convert.ToInt32(dtIds.Rows[0]["item_id"]);
+
+            using (var form = new AddEditDetailForm(0, deptId, itemId))
+            {
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    DatabaseHelper.ExecuteNonQuery(
+                        "INSERT INTO actual_expenses (department_id, item_id, expense_date, amount, note) VALUES (@deptId, @itemId, @date, @amount, @note)",
+                        new Npgsql.NpgsqlParameter("@deptId", deptId),
+                        new Npgsql.NpgsqlParameter("@itemId", itemId),
+                        new Npgsql.NpgsqlParameter("@date", form.ExpenseDate),
+                        new Npgsql.NpgsqlParameter("@amount", form.Amount),
+                        new Npgsql.NpgsqlParameter("@note", form.Note ?? "")
+                    );
+                    DataGridViewMaster_SelectionChanged(null, null); // Обновить нижнюю таблицу
+                }
             }
         }
 
-        // Аналогичные кнопки для Detail (Фактические затраты)
-        // btnAddDetail, btnEditDetail, btnDeleteDetail
-        // ... (реализуются по аналогии с Master, но для actual_expenses)
+        private void btnEditDetail_Click(object sender, EventArgs e)
+        {
+            if (dataGridViewDetail.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Выберите запись в нижней таблице для редактирования.");
+                return;
+            }
+
+            int actualId = Convert.ToInt32(dataGridViewDetail.SelectedRows[0].Cells["actual_id"].Value);
+            string sql = $"SELECT * FROM actual_expenses WHERE actual_id = {actualId}";
+            var dt = DatabaseHelper.ExecuteQuery(sql);
+            if (dt.Rows.Count == 0) return;
+
+            using (var form = new AddEditDetailForm(actualId, 0, 0))
+            {
+                form.SetEditData(
+                    Convert.ToDateTime(dt.Rows[0]["expense_date"]),
+                    Convert.ToDecimal(dt.Rows[0]["amount"]),
+                    dt.Rows[0]["note"].ToString()
+                );
+
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    DatabaseHelper.ExecuteNonQuery(
+                        "UPDATE actual_expenses SET expense_date=@date, amount=@amount, note=@note WHERE actual_id=@actualId",
+                        new Npgsql.NpgsqlParameter("@date", form.ExpenseDate),
+                        new Npgsql.NpgsqlParameter("@amount", form.Amount),
+                        new Npgsql.NpgsqlParameter("@note", form.Note ?? ""),
+                        new Npgsql.NpgsqlParameter("@actualId", actualId)
+                    );
+                    DataGridViewMaster_SelectionChanged(null, null);
+                }
+            }
+        }
+
+        private void btnDeleteDetail_Click(object sender, EventArgs e)
+        {
+            if (dataGridViewDetail.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Выберите запись в нижней таблице для удаления.");
+                return;
+            }
+
+            if (MessageBox.Show("Удалить фактическую запись?", "Подтверждение", MessageBoxButtons.YesNo) == DialogResult.Yes)
+            {
+                int actualId = Convert.ToInt32(dataGridViewDetail.SelectedRows[0].Cells["actual_id"].Value);
+                DatabaseHelper.ExecuteNonQuery("DELETE FROM actual_expenses WHERE actual_id = @id", 
+                                                new Npgsql.NpgsqlParameter("@id", actualId));
+                DataGridViewMaster_SelectionChanged(null, null);
+            }
+        }
 
         private void btnOpenReport_Click(object sender, EventArgs e)
         {
