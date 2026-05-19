@@ -6,8 +6,8 @@ namespace KovtunenkoTask
 {
     public static class DatabaseHelper
     {
-        // СТРОКА ПОДКЛЮЧЕНИЯ: поменяйте на свои данные
-        private const string ConnectionString = "Host=localhost;Port=5432;Database=KovtunenkoDB;Username=postgres;Password=your_password";
+        // ЗАМЕНИТЕ НА СВОИ ДАННЫЕ!
+        private const string ConnectionString = "Host=localhost;Port=5432;Database=KovtunenkoDB;Username=postgres;Password=123456";
 
         public static DataTable ExecuteQuery(string sql, params NpgsqlParameter[] parameters)
         {
