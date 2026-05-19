@@ -1,0 +1,277 @@
+private void btnAddMaster_Click(object sender, EventArgs e)
+{
+    // 1. Открываем форму добавления в режиме "Новая запись" (id = 0)
+    using (var form = new AddEditForm(0)) 
+    {
+        // 2. Показываем форму и ждем, пока пользователь нажмет "Сохранить"
+        if (form.ShowDialog() == DialogResult.OK)
+        {
+            // 3. Если пользователь сохранил — вставляем новую запись в БД
+            DatabaseHelper.ExecuteNonQuery(
+                "INSERT INTO planned_expenses (department_id, item_id, plan_year, planned_amount) VALUES (@deptId, @itemId, @year, @amount)",
+                new Npgsql.NpgsqlParameter("@deptId", form.SelectedDepartmentId),
+                new Npgsql.NpgsqlParameter("@itemId", form.SelectedItemId),
+                new Npgsql.NpgsqlParameter("@year", form.Year),
+                new Npgsql.NpgsqlParameter("@amount", form.Amount)
+            );
+            
+            // 4. Обновляем таблицу на главной форме
+            LoadData();
+        }
+    }
+}
+private void btnEditMaster_Click(object sender, EventArgs e)
+{
+    // 1. Проверяем, выбрана ли строка в таблице
+    if (dataGridViewMaster.SelectedRows.Count == 0)
+    {
+        MessageBox.Show("Выберите строку для редактирования.");
+        return;
+    }
+    
+    // 2. Получаем ID плановой записи из скрытой колонки
+    int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
+    
+    // 3. Загружаем текущие данные из базы
+    string sql = "SELECT * FROM planned_expenses WHERE plan_id = " + planId;
+    var dt = DatabaseHelper.ExecuteQuery(sql);
+    if (dt.Rows.Count == 0) return;
+    
+    // 4. Открываем форму редактирования, передаем ID записи
+    using (var form = new AddEditForm(planId))
+    {
+        // 5. Предзаполняем форму старыми данными (чтобы не вводить заново)
+        form.SetEditData(
+            Convert.ToInt32(dt.Rows[0]["department_id"]),
+            Convert.ToInt32(dt.Rows[0]["item_id"]),
+            Convert.ToInt32(dt.Rows[0]["plan_year"]),
+            Convert.ToDecimal(dt.Rows[0]["planned_amount"])
+        );
+        
+        // 6. Если пользователь нажал "Сохранить" — делаем UPDATE
+        if (form.ShowDialog() == DialogResult.OK)
+        {
+            DatabaseHelper.ExecuteNonQuery(
+                "UPDATE planned_expenses SET department_id=@deptId, item_id=@itemId, plan_year=@year, planned_amount=@amount WHERE plan_id=@planId",
+                new Npgsql.NpgsqlParameter("@deptId", form.SelectedDepartmentId),
+                new Npgsql.NpgsqlParameter("@itemId", form.SelectedItemId),
+                new Npgsql.NpgsqlParameter("@year", form.Year),
+                new Npgsql.NpgsqlParameter("@amount", form.Amount),
+                new Npgsql.NpgsqlParameter("@planId", planId)
+            );
+            
+            // 7. Обновляем таблицу
+            LoadData();
+        }
+    }
+
+private void btnDeleteMaster_Click(object sender, EventArgs e)
+{
+    // 1. Проверка выбора
+    if (dataGridViewMaster.SelectedRows.Count == 0)
+    {
+        MessageBox.Show("Выберите запись для удаления.");
+        return;
+    }
+    
+    // 2. Подтверждение удаления
+    if (MessageBox.Show("Вы уверены, что хотите удалить эту плановую запись?", 
+                        "Подтверждение удаления", 
+                        MessageBoxButtons.YesNo, 
+                        MessageBoxIcon.Question) == DialogResult.No)
+    {
+        return;
+    }
+    
+    // 3. Получаем ID и удаляем
+    int planId = Convert.ToInt32(dataGridViewMaster.SelectedRows[0].Cells["plan_id"].Value);
+    DatabaseHelper.ExecuteNonQuery("DELETE FROM planned_expenses WHERE plan_id = @id", 
+                                    new Npgsql.NpgsqlParameter("@id", planId));
+    
+    // 4. Обновляем таблицу
+    LoadData();
+}
+}
+
+private void btnOpenReport_Click(object sender, EventArgs e)
+{
+    // Просто открываем форму отчета как диалог
+    ReportForm reportForm = new ReportForm();
+    reportForm.ShowDialog();
+}
+
+private void btnSave_Click(object sender, EventArgs e)
+{
+    // 1. Валидация: выбран ли отдел и статья
+    if (comboBoxDepartment.SelectedIndex == -1 || comboBoxItem.SelectedIndex == -1)
+    {
+        MessageBox.Show("Выберите отдел и статью затрат.");
+        return;
+    }
+    
+    // 2. Извлекаем ID из ComboBox (там хранится ID, отображается имя)
+    SelectedDepartmentId = Convert.ToInt32(comboBoxDepartment.SelectedValue);
+    SelectedItemId = Convert.ToInt32(comboBoxItem.SelectedValue);
+    
+    // 3. Проверка года
+    if (!int.TryParse(textBoxYear.Text, out int year) || year < 2020)
+    {
+        MessageBox.Show("Введите корректный год (не менее 2020).");
+        return;
+    }
+    Year = year;
+    
+    // 4. Проверка суммы
+    if (!decimal.TryParse(textBoxAmount.Text, out decimal amount) || amount < 0)
+    {
+        MessageBox.Show("Введите корректную сумму (неотрицательное число).");
+        return;
+    }
+    Amount = amount;
+    
+    // 5. Закрываем форму с результатом OK
+    DialogResult = DialogResult.OK;
+    Close();
+}
+
+public void SetEditData(int deptId, int itemId, int year, decimal amount)
+{
+    // Устанавливаем значения в элементы управления
+    comboBoxDepartment.SelectedValue = deptId;
+    comboBoxItem.SelectedValue = itemId;
+    textBoxYear.Text = year.ToString();
+    textBoxAmount.Text = amount.ToString();
+}
+
+private void btnGenerateReport_Click(object sender, EventArgs e)
+{
+    // 1. Проверка: выбраны ли статьи затрат
+    if (checkedListBoxItems.CheckedItems.Count == 0)
+    {
+        MessageBox.Show("Выберите хотя бы одну статью затрат.");
+        return;
+    }
+    
+    // 2. Собираем выбранные статьи в список строк
+    List<string> selectedItems = new List<string>();
+    foreach (var item in checkedListBoxItems.CheckedItems)
+    {
+        selectedItems.Add(item.ToString());
+    }
+    
+    // 3. Формируем SQL-запрос: выбираем статьи и суммы за период
+    string itemsList = string.Join(",", selectedItems.Select(s => $"'{s}'")); // например 'Реклама','Командировки'
+    
+    string sql = $@"
+        SELECT i.item_name AS ""Статья"", 
+               SUM(a.amount) AS ""Сумма""
+        FROM actual_expenses a
+        JOIN expense_items i ON a.item_id = i.item_id
+        WHERE a.expense_date BETWEEN @from AND @to
+        AND i.item_name IN ({itemsList})
+        GROUP BY i.item_name
+        ORDER BY ""Сумма"" DESC";
+    
+    // 4. Выполняем запрос
+    DataTable reportTable = DatabaseHelper.ExecuteQuery(sql, 
+        new Npgsql.NpgsqlParameter("@from", dateTimePickerFrom.Value.Date),
+        new Npgsql.NpgsqlParameter("@to", dateTimePickerTo.Value.Date));
+    
+    // 5. Отображаем таблицу
+    dataGridViewReport.DataSource = reportTable;
+    
+    // 6. Строим диаграмму
+    BuildChart(reportTable);
+}
+
+private void btnExportExcel_Click(object sender, EventArgs e)
+{
+    // 1. Проверка: есть ли данные для экспорта
+    if (dataGridViewReport.Rows.Count == 0)
+    {
+        MessageBox.Show("Сначала сформируйте отчет.");
+        return;
+    }
+    
+    // 2. Диалог сохранения файла
+    using (SaveFileDialog sfd = new SaveFileDialog() 
+    { 
+        Filter = "Excel Files|*.xlsx", 
+        Title = "Сохранить отчет в Excel",
+        FileName = "Отчет_по_затратам.xlsx"
+    })
+    {
+        if (sfd.ShowDialog() == DialogResult.OK)
+        {
+            // 3. Создаем Excel-файл через EPPlus
+            using (var package = new OfficeOpenXml.ExcelPackage())
+            {
+                var worksheet = package.Workbook.Worksheets.Add("Отчет по затратам");
+                
+                // 4. Записываем заголовки колонок
+                for (int c = 0; c < dataGridViewReport.Columns.Count; c++)
+                {
+                    worksheet.Cells[1, c + 1].Value = dataGridViewReport.Columns[c].HeaderText;
+                }
+                
+                // 5. Записываем данные строк
+                for (int r = 0; r < dataGridViewReport.Rows.Count; r++)
+                {
+                    for (int c = 0; c < dataGridViewReport.Columns.Count; c++)
+                    {
+                        var val = dataGridViewReport.Rows[r].Cells[c].Value;
+                        worksheet.Cells[r + 2, c + 1].Value = val != null ? val.ToString() : "";
+                    }
+                }
+                
+                // 6. Автоподбор ширины колонок
+                worksheet.Cells.AutoFitColumns();
+                
+                // 7. Сохраняем файл
+                package.SaveAs(sfd.FileName);
+            }
+            
+            MessageBox.Show($"Отчет успешно экспортирован!\nФайл: {sfd.FileName}");
+        }
+    }
+}
+
+private void BuildChart(DataTable dt)
+{
+    // Очищаем старые данные
+    chart1.Series.Clear();
+    
+    // Создаем новую серию (столбцовую диаграмму)
+    var series = new System.Windows.Forms.DataVisualization.Charting.Series
+    {
+        Name = "Затраты",
+        ChartType = System.Windows.Forms.DataVisualization.Charting.SeriesChartType.Column
+    };
+    
+    // Добавляем точки данных из таблицы
+    foreach (DataRow row in dt.Rows)
+    {
+        string category = row["Статья"].ToString();
+        decimal amount = Convert.ToDecimal(row["Сумма"]);
+        series.Points.AddXY(category, amount);
+    }
+    
+    // Добавляем серию на диаграмму
+    chart1.Series.Add(series);
+    
+    // Настраиваем поворот подписей оси X, чтобы не наезжали друг на друга
+    chart1.ChartAreas[0].AxisX.LabelStyle.Angle = -45;
+}
+
+public static int ExecuteNonQuery(string sql, params Npgsql.NpgsqlParameter[] parameters)
+{
+    using (var conn = new NpgsqlConnection(ConnectionString))
+    {
+        conn.Open();
+        using (var cmd = new NpgsqlCommand(sql, conn))
+        {
+            if (parameters != null) cmd.Parameters.AddRange(parameters);
+            return cmd.ExecuteNonQuery();
+        }
+    }
+}
