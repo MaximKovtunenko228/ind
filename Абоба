@@ -71,3 +71,5 @@ namespace KovtunenkoTask
         }
     }
 }
+
+'Form1' does not contain a definition for 'components' and no accessible extension method 'components' accepting a first argument of type 'Form1' could be found (are you missing a using directive or an assembly reference?)
