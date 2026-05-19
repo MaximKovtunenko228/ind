@@ -1,0 +1,43 @@
+using Npgsql;
+using System;
+using System.Data;
+
+namespace KovtunenkoTask
+{
+    public static class DatabaseHelper
+    {
+        // СТРОКА ПОДКЛЮЧЕНИЯ: поменяйте на свои данные
+        private const string ConnectionString = "Host=localhost;Port=5432;Database=KovtunenkoDB;Username=postgres;Password=your_password";
+
+        public static DataTable ExecuteQuery(string sql, params NpgsqlParameter[] parameters)
+        {
+            using (var conn = new NpgsqlConnection(ConnectionString))
+            {
+                conn.Open();
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    if (parameters != null) cmd.Parameters.AddRange(parameters);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        DataTable dt = new DataTable();
+                        dt.Load(reader);
+                        return dt;
+                    }
+                }
+            }
+        }
+
+        public static int ExecuteNonQuery(string sql, params NpgsqlParameter[] parameters)
+        {
+            using (var conn = new NpgsqlConnection(ConnectionString))
+            {
+                conn.Open();
+                using (var cmd = new NpgsqlCommand(sql, conn))
+                {
+                    if (parameters != null) cmd.Parameters.AddRange(parameters);
+                    return cmd.ExecuteNonQuery();
+                }
+            }
+        }
+    }
+}
