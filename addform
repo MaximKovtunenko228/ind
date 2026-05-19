@@ -1,5 +1,6 @@
 using System;
 using System.Data;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace KovtunenkoTask
@@ -11,28 +12,58 @@ namespace KovtunenkoTask
         public int Year { get; private set; }
         public decimal Amount { get; private set; }
 
-        private bool isEditMode = false;
-        private int editId = 0;
+        private ComboBox comboBoxDepartment;
+        private ComboBox comboBoxItem;
+        private TextBox textBoxYear;
+        private TextBox textBoxAmount;
+        private Button btnSave;
+        private Button btnCancel;
 
         public AddEditForm(int id)
         {
-            InitializeComponent();
-            editId = id;
-            isEditMode = (id > 0);
+            InitializeCustomComponents();
+            this.Text = id == 0 ? "Добавление плановой записи" : "Редактирование плановой записи";
+        }
 
-            // Заполняем ComboBox отделами (Display = name, Value = id)
+        private void InitializeCustomComponents()
+        {
+            this.Size = new Size(400, 250);
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+
+            Label lblDept = new Label { Text = "Отдел:", Location = new Point(20, 20), Size = new Size(100, 20) };
+            comboBoxDepartment = new ComboBox { Location = new Point(120, 17), Width = 200, DropDownStyle = ComboBoxStyle.DropDownList };
+            
+            Label lblItem = new Label { Text = "Статья затрат:", Location = new Point(20, 50), Size = new Size(100, 20) };
+            comboBoxItem = new ComboBox { Location = new Point(120, 47), Width = 200, DropDownStyle = ComboBoxStyle.DropDownList };
+
+            Label lblYear = new Label { Text = "Год:", Location = new Point(20, 80), Size = new Size(100, 20) };
+            textBoxYear = new TextBox { Location = new Point(120, 77), Width = 200 };
+            textBoxYear.Text = DateTime.Now.Year.ToString();
+
+            Label lblAmount = new Label { Text = "Плановая сумма:", Location = new Point(20, 110), Size = new Size(100, 20) };
+            textBoxAmount = new TextBox { Location = new Point(120, 107), Width = 200 };
+
+            btnSave = new Button { Text = "Сохранить", Location = new Point(80, 150), Width = 100, DialogResult = DialogResult.OK };
+            btnCancel = new Button { Text = "Отмена", Location = new Point(200, 150), Width = 100, DialogResult = DialogResult.Cancel };
+
+            btnSave.Click += btnSave_Click;
+
+            this.Controls.AddRange(new Control[] { lblDept, comboBoxDepartment, lblItem, comboBoxItem, 
+                                                   lblYear, textBoxYear, lblAmount, textBoxAmount, 
+                                                   btnSave, btnCancel });
+
+            // Заполняем ComboBox
             DataTable depts = DatabaseHelper.ExecuteQuery("SELECT department_id, department_name FROM departments ORDER BY department_name");
             comboBoxDepartment.DisplayMember = "department_name";
             comboBoxDepartment.ValueMember = "department_id";
             comboBoxDepartment.DataSource = depts;
 
-            // Заполняем ComboBox статьями затрат
             DataTable items = DatabaseHelper.ExecuteQuery("SELECT item_id, item_name FROM expense_items ORDER BY item_name");
             comboBoxItem.DisplayMember = "item_name";
             comboBoxItem.ValueMember = "item_id";
             comboBoxItem.DataSource = items;
-
-            textBoxYear.Text = DateTime.Now.Year.ToString();
         }
 
         public void SetEditData(int deptId, int itemId, int year, decimal amount)
@@ -45,23 +76,29 @@ namespace KovtunenkoTask
 
         private void btnSave_Click(object sender, EventArgs e)
         {
+            if (comboBoxDepartment.SelectedIndex == -1 || comboBoxItem.SelectedIndex == -1)
+            {
+                MessageBox.Show("Выберите отдел и статью затрат.");
+                return;
+            }
+            
             SelectedDepartmentId = Convert.ToInt32(comboBoxDepartment.SelectedValue);
             SelectedItemId = Convert.ToInt32(comboBoxItem.SelectedValue);
             
             if (!int.TryParse(textBoxYear.Text, out int year) || year < 2020)
             {
-                MessageBox.Show("Введите корректный год (>=2020)");
+                MessageBox.Show("Введите корректный год (не менее 2020).");
                 return;
             }
             Year = year;
-
+            
             if (!decimal.TryParse(textBoxAmount.Text, out decimal amount) || amount < 0)
             {
-                MessageBox.Show("Введите корректную сумму (>=0)");
+                MessageBox.Show("Введите корректную сумму (неотрицательное число).");
                 return;
             }
             Amount = amount;
-
+            
             DialogResult = DialogResult.OK;
             Close();
         }
