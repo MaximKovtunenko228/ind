@@ -1,22 +1,78 @@
-using System;
+ using System;
+using System.Collections.Generic;
 using System.Data;
+using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using OfficeOpenXml; // NuGet: EPPlus
+using OfficeOpenXml;
 using System.Windows.Forms.DataVisualization.Charting;
 
 namespace KovtunenkoTask
 {
     public partial class ReportForm : Form
     {
+        private DateTimePicker dateTimePickerFrom;
+        private DateTimePicker dateTimePickerTo;
+        private CheckedListBox checkedListBoxItems;
+        private DataGridView dataGridViewReport;
+        private Chart chart1;
+        private Button btnGenerateReport;
+        private Button btnExportExcel;
+
         public ReportForm()
         {
-            InitializeComponent();
-            // Устанавливаем текущие даты для фильтра
-            dateTimePickerFrom.Value = new DateTime(DateTime.Now.Year, 1, 1);
-            dateTimePickerTo.Value = DateTime.Now;
+            InitializeCustomComponents();
+        }
+
+        private void InitializeCustomComponents()
+        {
+            this.Text = "Отчет по затратам";
+            this.Size = new Size(900, 700);
+            this.StartPosition = FormStartPosition.CenterParent;
+
+            // Панель фильтров
+            Panel panelFilters = new Panel { Dock = DockStyle.Top, Height = 100 };
             
-            // Загружаем статьи затрат в CheckedListBox
+            Label lblPeriod = new Label { Text = "Период:", Location = new Point(20, 15), Size = new Size(50, 20) };
+            dateTimePickerFrom = new DateTimePicker { Location = new Point(80, 12), Width = 150, Format = DateTimePickerFormat.Short };
+            dateTimePickerFrom.Value = new DateTime(DateTime.Now.Year, 1, 1);
+            
+            Label lblTo = new Label { Text = "по", Location = new Point(240, 15), Size = new Size(30, 20) };
+            dateTimePickerTo = new DateTimePicker { Location = new Point(280, 12), Width = 150, Format = DateTimePickerFormat.Short };
+            dateTimePickerTo.Value = DateTime.Now;
+
+            Label lblItems = new Label { Text = "Статьи затрат:", Location = new Point(20, 45), Size = new Size(100, 20) };
+            checkedListBoxItems = new CheckedListBox { Location = new Point(120, 40), Width = 300, Height = 50 };
+            
+            btnGenerateReport = new Button { Text = "Сформировать отчет", Location = new Point(480, 40), Width = 150, Height = 30 };
+            btnExportExcel = new Button { Text = "Экспорт в Excel", Location = new Point(650, 40), Width = 150, Height = 30 };
+
+            btnGenerateReport.Click += btnGenerateReport_Click;
+            btnExportExcel.Click += btnExportExcel_Click;
+
+            panelFilters.Controls.AddRange(new Control[] { lblPeriod, dateTimePickerFrom, lblTo, dateTimePickerTo,
+                                                           lblItems, checkedListBoxItems, btnGenerateReport, btnExportExcel });
+            this.Controls.Add(panelFilters);
+
+            // Таблица отчета
+            dataGridViewReport = new DataGridView();
+            dataGridViewReport.Dock = DockStyle.Top;
+            dataGridViewReport.Height = 200;
+            dataGridViewReport.AllowUserToAddRows = false;
+            dataGridViewReport.ReadOnly = true;
+            dataGridViewReport.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            this.Controls.Add(dataGridViewReport);
+
+            // Диаграмма
+            chart1 = new Chart();
+            chart1.Dock = DockStyle.Fill;
+            ChartArea area = new ChartArea("MainArea");
+            chart1.ChartAreas.Add(area);
+            Legend legend = new Legend("Legend");
+            chart1.Legends.Add(legend);
+            this.Controls.Add(chart1);
+
+            // Заполняем CheckedListBox статьями
             DataTable items = DatabaseHelper.ExecuteQuery("SELECT item_id, item_name FROM expense_items ORDER BY item_name");
             foreach (DataRow row in items.Rows)
             {
@@ -31,45 +87,51 @@ namespace KovtunenkoTask
                 MessageBox.Show("Выберите хотя бы одну статью затрат.");
                 return;
             }
-
-            string[] selectedItems = checkedListBoxItems.CheckedItems.Cast<string>().ToArray();
+            
+            List<string> selectedItems = new List<string>();
+            foreach (var item in checkedListBoxItems.CheckedItems)
+            {
+                selectedItems.Add(item.ToString());
+            }
+            
             string itemsList = string.Join(",", selectedItems.Select(s => $"'{s}'"));
-
+            
             string sql = $@"
-                SELECT i.item_name AS Статья, SUM(a.amount) AS Сумма
+                SELECT i.item_name AS ""Статья"", 
+                       SUM(a.amount) AS ""Сумма""
                 FROM actual_expenses a
                 JOIN expense_items i ON a.item_id = i.item_id
                 WHERE a.expense_date BETWEEN @from AND @to
                 AND i.item_name IN ({itemsList})
                 GROUP BY i.item_name
-                ORDER BY Сумма DESC";
-
+                ORDER BY ""Сумма"" DESC";
+            
             DataTable reportTable = DatabaseHelper.ExecuteQuery(sql, 
                 new Npgsql.NpgsqlParameter("@from", dateTimePickerFrom.Value.Date),
                 new Npgsql.NpgsqlParameter("@to", dateTimePickerTo.Value.Date));
-
+            
             dataGridViewReport.DataSource = reportTable;
-
-            // Строим диаграмму
+            
             BuildChart(reportTable);
         }
 
         private void BuildChart(DataTable dt)
         {
             chart1.Series.Clear();
-            var series = new System.Windows.Forms.DataVisualization.Charting.Series
+            
+            var series = new Series
             {
                 Name = "Затраты",
                 ChartType = SeriesChartType.Column
             };
-
+            
             foreach (DataRow row in dt.Rows)
             {
                 string category = row["Статья"].ToString();
                 decimal amount = Convert.ToDecimal(row["Сумма"]);
                 series.Points.AddXY(category, amount);
             }
-
+            
             chart1.Series.Add(series);
             chart1.ChartAreas[0].AxisX.LabelStyle.Angle = -45;
         }
@@ -81,37 +143,41 @@ namespace KovtunenkoTask
                 MessageBox.Show("Сначала сформируйте отчет.");
                 return;
             }
-
-            using (SaveFileDialog sfd = new SaveFileDialog() { Filter = "Excel Files|*.xlsx" })
+            
+            using (SaveFileDialog sfd = new SaveFileDialog() 
+            { 
+                Filter = "Excel Files|*.xlsx", 
+                Title = "Сохранить отчет в Excel",
+                FileName = "Отчет_по_затратам.xlsx"
+            })
             {
                 if (sfd.ShowDialog() == DialogResult.OK)
                 {
-                    // Экспорт через EPPlus (требуется установка через NuGet)
                     using (var package = new ExcelPackage())
                     {
                         var worksheet = package.Workbook.Worksheets.Add("Отчет по затратам");
                         
-                        // Заголовки
                         for (int c = 0; c < dataGridViewReport.Columns.Count; c++)
                         {
                             worksheet.Cells[1, c + 1].Value = dataGridViewReport.Columns[c].HeaderText;
                         }
                         
-                        // Данные
                         for (int r = 0; r < dataGridViewReport.Rows.Count; r++)
                         {
                             for (int c = 0; c < dataGridViewReport.Columns.Count; c++)
                             {
-                                worksheet.Cells[r + 2, c + 1].Value = dataGridViewReport.Rows[r].Cells[c].Value?.ToString() ?? "";
+                                var val = dataGridViewReport.Rows[r].Cells[c].Value;
+                                worksheet.Cells[r + 2, c + 1].Value = val != null ? val.ToString() : "";
                             }
                         }
-
+                        
                         worksheet.Cells.AutoFitColumns();
                         package.SaveAs(sfd.FileName);
                     }
-                    MessageBox.Show("Отчет экспортирован!");
+                    
+                    MessageBox.Show($"Отчет экспортирован!\nФайл: {sfd.FileName}");
                 }
             }
         }
     }
-}
+}               
